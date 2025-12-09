@@ -10,60 +10,18 @@ import {
   Web3EtherlinkBridgeBlockchainService,
   type TokenPair,
   type NativeTezosToken,
-  BridgeTokenTransferStatus
-} from 'tezlink-bridge'
+} from '@baking-bad/tezos-etherlink-bridge-sdk'
 import { BeaconWallet } from '@taquito/beacon-wallet';
 import { NetworkType } from '@airgap/beacon-types'
 import Web3 from 'web3';
 import { SigningType } from '@airgap/beacon-dapp';
 import { Buffer } from 'buffer';
 import RLP from 'rlp';
+import CircularProgress from '@mui/material/CircularProgress';
 (window as any).global = window;
 (window as any).Buffer = Buffer;
 
-// Use MetaMask
-const web3 = new Web3();
 
-const tezosRpcUrl = 'https://rpc.tzkt.io/shadownet/';
-// const tezosRpcUrl = 'http://127.0.0.1:36797';
-
-const TezosToken: NativeTezosToken = {
-  type: 'native',
-};
-
-const options = {
-  name: 'Tezlink Bridge',
-  iconUrl: tezlinkLogo,
-  // preferredNetwork: NetworkType.CUSTOM,
-  preferredNetwork: NetworkType.SHADOWNET,
-  enableMetrics: true,
-};
-
-const wallet = new BeaconWallet(options);
-
-// Native
-const tokenPairs: TokenPair[] =
-  [{
-    tezos: {
-      type: 'native',
-      // ticketHelperContractAddress: 'KT1UDCJyj2ghpqYXZN7JHhueVLg2c5X5JVZo',
-      ticketHelperContractAddress: 'KT1LH9e9MnRVeW8iirvQUQgCpcDYCHrHfJqy',
-    },
-    etherlink: {
-      type: 'native',
-    }
-  }];
-
-const defaultDataProvider = new DefaultDataProvider({
-  dipDup: {
-    baseUrl: 'https://testnet.bridge.indexer.etherlink.com',
-    webSocketApiBaseUrl: 'wss://testnet.bridge.indexer.etherlink.com'
-  },
-  // tzKTApiBaseUrl: 'http://localhost:5000',
-  tzKTApiBaseUrl: 'https://api.shadownet.tzkt.io',
-  etherlinkRpcUrl: 'https://node.ghostnet.etherlink.com',
-  tokenPairs
-})
 
 class BeaconSigner implements Signer {
   wallet: BeaconWallet;
@@ -112,27 +70,115 @@ class BeaconSigner implements Signer {
 }
 
 
-// let b58signature = await wallet.sign(bytes, magicByte);
-// let signature = b58decode(b58signature);
-// return {
-//   bytes,
-//   sig: signature,
-//   prefixSig: signature,
-//   sbytes: bytes,
-// };
-
 function App() {
+
+  const toNetworkType = (value: string): NetworkType | undefined =>
+    Object.values(NetworkType).includes(value as NetworkType)
+      ? (value as NetworkType)
+      : undefined;
+
+  // Use MetaMask
+  const web3 = new Web3();
+
+  let tezosRpcUrl = 'https://rpc.tzkt.io/';
+  let network = NetworkType.SHADOWNET;
+  const env_network = toNetworkType(import.meta.env.VITE_NETWORK);
+  const endpoint = import.meta.env.VITE_ENDPOINT;
+
+  if (env_network !== undefined) {
+    network = env_network;
+    if (network == NetworkType.CUSTOM) {
+      // If network is custom user should give an endpoint
+      if (endpoint !== undefined) {
+        tezosRpcUrl = endpoint;
+      } else {
+        console.log('No endpoint given despite a custom network, switching to shadownet')
+        network = NetworkType.SHADOWNET;
+        tezosRpcUrl += network;
+      }
+    } else {
+      tezosRpcUrl += env_network;
+    }
+  } else {
+    console.log('Network is unparsable, switching to default network: ' + env_network)
+    tezosRpcUrl += network;
+  }
+
+  const TezosToken: NativeTezosToken = {
+    type: 'native',
+  };
+
+  const options = {
+    name: 'Tezlink Bridge',
+    iconUrl: tezlinkLogo,
+    preferredNetwork: network,
+    enableMetrics: true,
+  };
+
+  const wallet = new BeaconWallet(options);
+
+  let deposit_contract = 'KT1JmSDcDPyBzFCJ2uTzqKhCtpRvxARzjDrh'
+  const env_deposit_contract = import.meta.env.VITE_CONTRACT;
+
+  if (env_deposit_contract !== undefined) {
+    deposit_contract = env_deposit_contract;
+  }
+
+  // Native
+  const tokenPairs: TokenPair[] =
+    [{
+      tezos: {
+        type: 'native',
+        ticketHelperContractAddress: deposit_contract,
+      },
+      etherlink: {
+        type: 'native',
+      }
+    }];
+
+  let tzkt = 'https://api.shadownet.tzkt.io';
+
+  if (network == NetworkType.CUSTOM) {
+    const env_tzkt = import.meta.env.VITE_TZKT;
+    if (env_tzkt !== undefined) {
+      tzkt = env_tzkt;
+    } else {
+      console.log('No tzkt api provided despite a custom network, switching to shadownet');
+      network = NetworkType.SHADOWNET;
+      tezosRpcUrl = `https://rpc.tzkt.io/${network}`;
+    }
+  } else {
+    tzkt = `https://api.${network}.tzkt.io`;
+  }
+
+
+  const defaultDataProvider = new DefaultDataProvider({
+    dipDup: {
+      baseUrl: 'https://testnet.bridge.indexer.etherlink.com',
+      webSocketApiBaseUrl: 'wss://testnet.bridge.indexer.etherlink.com'
+    },
+    tzKTApiBaseUrl: tzkt,
+    etherlinkRpcUrl: 'https://node.ghostnet.etherlink.com',
+    tokenPairs
+  })
+
   const [am, setAmount] = useState('');
   const [amountMessage, setamountMessage] = useState<string>('');
   const [balance, setBalance] = useState<string>('');
   const [address, setAddress] = useState<string>('');
 
   let tezosToolkit = new TezosToolkit(tezosRpcUrl);
+
+  let rollup = 'sr1M1Gn31bcNHkyLXqpJAG4XWdJEPagiYQZx';
+  const env_rollup = import.meta.env.VITE_ROLLUP;
+  if (env_rollup !== undefined) {
+    rollup = env_rollup;
+  }
+
   const tokenBridge = new TokenBridge({
     tezosBridgeBlockchainService: new TaquitoWalletTezosBridgeBlockchainService({
       tezosToolkit: tezosToolkit,
-      smartRollupAddress: 'sr1M1Gn31bcNHkyLXqpJAG4XWdJEPagiYQZx'
-      // smartRollupAddress: 'sr1MHLNAz2BAVNT7m9g1dKmjQritFhw1ZikF'
+      smartRollupAddress: rollup
     }),
     etherlinkBridgeBlockchainService: new Web3EtherlinkBridgeBlockchainService({
       web3
@@ -144,6 +190,29 @@ function App() {
     }
   });
 
+  const verify_validity = (amount: string) => {
+    if (address == '') {
+      setamountMessage("Please connect a wallet first")
+      return false;
+    }
+    let numAmount = Number(amount);
+    let numBalance = Number(balance);
+    if (Number.isNaN(numAmount)) {
+      setamountMessage("Please use a valid amount")
+      return false;
+    } else if (numAmount > numBalance) {
+      setamountMessage("You can't deposit more than your balance")
+      return false;
+    } else if (numAmount < 0) {
+      setamountMessage("You can't deposit a negative amount")
+      return false;
+    } else {
+      setamountMessage('')
+      return true;
+    }
+  }
+
+
   const connectWallet = async () => {
     await wallet.requestPermissions();
 
@@ -154,68 +223,55 @@ function App() {
     setAddress(userAddress);
   };
 
+  const fetchBalance = async () => {
+    console.log("Fetch the balance of the address connected");
+    if (address == '') {
+      setBalance('');
+      return;
+    }
+
+    try {
+      const mutez = await tezosToolkit.tz.getBalance(address);
+      const xtz = mutez.toNumber() / 1_000_000;
+
+      setBalance(xtz.toString());
+      console.log("Balance has been set");
+    } catch (err) {
+      console.error("Erreur balance", err);
+      setBalance('');
+    }
+  };
+
   useEffect(() => {
-    const fetchBalance = async () => {
-      if (address == '') {
-        setBalance('');
-        return;
-      }
-
-      try {
-        const mutez = await tezosToolkit.tz.getBalance(address);
-        const xtz = mutez.toNumber() / 1_000_000;
-
-        setBalance(xtz.toString());
-      } catch (err) {
-        console.error("Erreur balance", err);
-        setBalance('');
-      }
-    };
-
     fetchBalance();
   }, [address]);
 
+  const [load, setLoad] = useState(false);
   const handleSubmit = async (e: React.FormEvent) => {
 
     e.preventDefault();
 
-    if (address == '') {
+    if (!verify_validity(am)) {
       return;
     }
+
     let numAmount = Number(am);
-    let numBalance = Number(balance);
-    if (numAmount == 0) {
-      setamountMessage("You must specify an amount")
-      return;
-    }
-
-    if (numAmount < 0 || numAmount > numBalance) {
-      return;
-    }
-
-
     let addr = b58decode(address);
     const data = Buffer.from(addr, 'hex');
     let array = RLP.encode([[1, data], []]);
     const hex = Buffer.from(array).toString('hex');
-    console.log("Encoded address:" + "01" + addr);
-    console.log("Test:" + "01" + hex);
-    console.log("Amount:" + BigInt(numAmount * 1_000_000));
     let mutez = numAmount * 1_000_000;
 
+    tezosToolkit.setWalletProvider(wallet);
     tezosToolkit.setSignerProvider(new BeaconSigner(wallet));
 
-    const { tokenTransfer, operationResult } = await tokenBridge.deposit(BigInt(mutez), TezosToken, "01" + hex);
+    const { tokenTransfer: _, operationResult } = await tokenBridge.deposit(BigInt(mutez), TezosToken, "01" + hex);
+    setLoad(true);
 
+    let result = await operationResult.operation.confirmation(3);
 
-    // Wait until the deposit status is Finished
-    const finishedBridgeTokenDeposit = await tokenBridge.waitForStatus(
-      tokenTransfer,
-      BridgeTokenTransferStatus.Finished
-    );
-    console.dir(finishedBridgeTokenDeposit, { depth: null });
-    console.dir(operationResult, { depth: null });
-
+    setLoad(!result?.completed);
+    fetchBalance()
   };
 
   return (
@@ -265,17 +321,7 @@ function App() {
                       return;
                     } else {
                       let amount = e.target.value;
-                      let numAmount = Number(amount);
-                      let numBalance = Number(balance);
-                      if (Number.isNaN(numAmount)) {
-                        setamountMessage("Please use a valid amount")
-                      } else if (numAmount > numBalance) {
-                        setamountMessage("You can't deposit more than your balance")
-                      } else if (numAmount < 0) {
-                        setamountMessage("You can't deposit a negative amount")
-                      } else {
-                        setamountMessage('')
-                      }
+                      verify_validity(amount)
                       setAmount(amount);
                     }
                   }}
@@ -296,9 +342,9 @@ function App() {
             </div>
           </div>
 
-          <button type="submit" style={{ padding: '10px 16px', cursor: 'pointer' }}>
+          {load ? <CircularProgress /> : <button type="submit" style={{ padding: '10px 16px', cursor: 'pointer' }}>
             Send ꜩ
-          </button>
+          </button>}
         </form>
         {address !== '' ? <div className="text-neutral-500 text-sm">Connected</div> : <button onClick={connectWallet} className="bg-red-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full">
           Connect wallet
