@@ -18,6 +18,7 @@ import { SigningType } from '@airgap/beacon-dapp';
 import { Buffer } from 'buffer';
 import RLP from 'rlp';
 import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
 (window as any).global = window;
 (window as any).Buffer = Buffer;
 
@@ -216,6 +217,7 @@ function App() {
   const [address, setAddress] = useState<string>('');
   // A boolean to let the user know if the bridge is processing its deposit
   const [load, setLoad] = useState(false);
+  const [sucess, setSuccess] = useState<boolean | undefined>();
 
 
   // Verify the valididty of the amount typed by the user
@@ -305,15 +307,17 @@ function App() {
     tezosToolkit.setSignerProvider(new BeaconSigner(wallet));
 
     const { tokenTransfer: _, operationResult } = await tokenBridge.deposit(BigInt(mutez), TezosToken, "01" + hex);
-    
+
     // Set the load boolean to true to notify the user that its deposit is being processed
     setLoad(true);
 
     // We await the confirmation and inclusion in the chain for the deposit
     let result = await operationResult.operation.confirmation(3);
 
-    // When the operation is completed, set the load boolean to not completed (which is false if the operation is completed)
-    setLoad(!result?.completed);
+    // When the operation is completed, set the load boolean to false
+    setLoad(false);
+
+    setSuccess(result?.completed);
 
     // To let the user keep a track of its balance we fetch it again to reprint it
     fetchBalance()
@@ -386,7 +390,7 @@ function App() {
               </div>
             </div>
           </div>
-
+          <Dialog open={sucess !== undefined}>Ca a marché</Dialog>
           {load ? <CircularProgress /> : <button type="submit" style={{ padding: '10px 16px', cursor: 'pointer' }}>
             Send ꜩ
           </button>}
